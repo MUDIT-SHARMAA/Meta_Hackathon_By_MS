@@ -25,4 +25,4 @@ def grade_medium(trajectory: List[dict], env_state: Any = None) -> float:
 
 def grade_hard(trajectory: List[dict], env_state: Any = None) -> float:
     score = _calculate_base_score(trajectory)
-    return 0.95 if score >= 0.9 else max(0.01, score)
+    return 0.95 if score >= 0.9 else max(0.01, score)  
