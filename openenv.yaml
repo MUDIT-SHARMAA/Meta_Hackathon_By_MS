@@ -1,0 +1,25 @@
+version: "1.0"
+name: "blockchain_certificate_admin"
+description: "An agent acts as a smart contract administrator, processing student certificates. It must validate scores, check for 42-character 0x wallet addresses, and manage its gas balance to successfully mint."
+
+# Pointers to the Pydantic models we wrote in Step 2
+observation_space: "models:BlockchainObservation"
+action_space: "models:BlockchainAction"
+reward_space: "models:BlockchainReward"
+
+# Pointer to the core engine we wrote in Step 3
+environment: "env:BlockchainEnv"
+
+# The 3 mandatory tasks ranging from Easy to Hard
+tasks:
+  - name: "easy_mint"
+    description: "Mint completely valid certificates without making syntax errors."
+    grader: "graders:grade_easy"
+  
+  - name: "medium_filter"
+    description: "Successfully identify and reject invalid requests (e.g., scores under 70, malformed wallets)."
+    grader: "graders:grade_medium"
+    
+  - name: "hard_gas_management"
+    description: "Process a full batch of complex requests over multiple steps without running out of gas due to penalizations."
+    grader: "graders:grade_hard"

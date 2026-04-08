@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blockchain_certificate_admin"
+version = "1.0.0"
+description = "OpenEnv Blockchain Certificate environment"
+dependencies = [
+    "pydantic>=2.0.0",
+    "openenv-core",
+    "openai",
+    "fastapi",
+    "uvicorn"
+]
+
+[project.scripts]
+server = "server.app:main"
