@@ -1,3 +1,12 @@
+---
+title: Blockchain Certificate Admin
+emoji: ⛓️
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # OpenEnv: Blockchain Certificate Administrator
 
 ## 🌍 Environment Description & Motivation
