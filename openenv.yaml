@@ -1,24 +1,15 @@
 version: "1.0"
 name: "blockchain_certificate_admin"
-description: "An agent acts as a smart contract administrator, processing student certificates. It must validate scores, check for 42-character 0x wallet addresses, and manage its gas balance to successfully mint."
-
-# Updated to the specific keys the validator expects
+description: "Smart contract administrator agent."
 models:
   observation: "models:BlockchainObservation"
   action: "models:BlockchainAction"
   reward: "models:BlockchainReward"
-
 env: "env:BlockchainEnv"
-
-# The 3 mandatory tasks with fixed paths
 tasks:
   - id: "easy_minting"
     grader: "graders.grade_easy"
-  
   - id: "medium_gas_management"
     grader: "graders.grade_medium"
-    
   - id: "hard_perfectionist"
     grader: "graders.grade_hard"
-
-      
