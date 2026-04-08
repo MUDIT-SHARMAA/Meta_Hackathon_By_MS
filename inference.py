@@ -8,9 +8,10 @@ from models import BlockchainAction
 from env import BlockchainEnv
 
 # --- Mandatory Hackathon Variables ---
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini") # Swap to your active model
+HF_TOKEN = os.getenv("HF_TOKEN")
+API_KEY = HF_TOKEN or os.getenv("OPENAI_API_KEY")
 TASK_NAME = os.getenv("MY_ENV_TASK", "hard_gas_management")
 BENCHMARK = "blockchain_certificate_admin"
 MAX_STEPS = 5
