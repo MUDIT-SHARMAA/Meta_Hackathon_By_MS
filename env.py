@@ -5,7 +5,7 @@ from typing import List, Optional
 from openai import OpenAI
  
 from models import BlockchainAction
-from env import BlockchainEnv
+
  
 # --- Mandatory Hackathon Variables ---
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
