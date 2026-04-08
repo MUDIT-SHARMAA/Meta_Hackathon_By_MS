@@ -1,128 +1,123 @@
-import random
-import string
-from pydantic import BaseModel
+mport os
+import json
+import textwrap
 from typing import List, Optional
-
-# Import our schemas from models.py
-from models import (
-    CertificateRequest, ActionDecision, BlockchainObservation,
-    BlockchainAction, BlockchainReward
-)
-
-# OpenEnv typically expects a return object with these fields for step/reset
-class EnvResult(BaseModel):
-    observation: BlockchainObservation
-    reward: float = 0.0
-    done: bool = False
-    info: dict = {}
-
-class BlockchainEnv:
-    def __init__(self, max_steps: int = 5):
-        self.max_steps = max_steps
-        self.current_step = 0
-        self.gas_balance = 0.0
-        self.pending_requests: List[CertificateRequest] = []
-        self.last_error: Optional[str] = None
-        self.gas_cost_per_mint = 0.1
-
-    def _generate_mock_wallet(self, valid: bool) -> str:
-        """Helper to generate realistic wallets to trick the agent."""
-        chars = ''.join(random.choices(string.ascii_lowercase + string.digits, k=40))
-        if valid:
-            return f"0x{chars}"
+from openai import OpenAI
+ 
+from models import BlockchainAction
+from env import BlockchainEnv
+ 
+# --- Mandatory Hackathon Variables ---
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")  # Swap to your active model
+HF_TOKEN = os.getenv("HF_TOKEN")
+API_KEY = HF_TOKEN or os.getenv("OPENAI_API_KEY")
+TASK_NAME = os.getenv("MY_ENV_TASK", "hard_gas_management")
+BENCHMARK = "blockchain_certificate_admin"
+MAX_STEPS = 5
+ 
+SYSTEM_PROMPT = textwrap.dedent(
+    """
+    You are a Smart Contract Administrator AI. 
+    You will receive a list of student certificate requests and your current gas balance.
+    Rules:
+    1. Only 'mint' if final_score >= 70 AND wallet_address is exactly 42 chars starting with '0x'.
+    2. Otherwise, 'reject'.
+    3. Minting costs 0.1 gas. Do not mint if gas balance is insufficient.
+    
+    You MUST respond with valid JSON matching this schema exactly:
+    {
+      "decisions": [
+        {"request_id": "REQ-1234", "decision": "mint", "reason": "Valid score and wallet"},
+        {"request_id": "REQ-5678", "decision": "reject", "reason": "Invalid wallet length"}
+      ]
+    }
+    Output ONLY JSON. No markdown formatting, no backticks.
+    """
+).strip()
+ 
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+ 
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={error_val}", flush=True)
+ 
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+ 
+def main():
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    env = BlockchainEnv(max_steps=MAX_STEPS)
+ 
+    history: List[str] = []
+    rewards: List[float] = []
+    steps_taken = 0
+    score = 0.0
+    success = False
+ 
+    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+ 
+    # Initialize Environment
+    result = env.reset()
+ 
+    try:
+        for step in range(1, MAX_STEPS + 1):
+            if result.done:
+                break
+ 
+            obs = result.observation
+            user_prompt = f"Pending Requests: {obs.pending_requests}\nGas Balance: {obs.gas_balance}\nStep: {step}"
+ 
+            try:
+                # Call LLM
+                completion = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.0,  # Deterministic logic preferred here
+                )
+                raw_response = (completion.choices[0].message.content or "").strip()
+ 
+                # Parse JSON and execute action
+                action_dict = json.loads(raw_response)
+                action = BlockchainAction(**action_dict)
+                result = env.step(action)
+ 
+                reward = result.reward
+                error = None
+                action_str = json.dumps(action_dict).replace(" ", "")  # Compress for STDOUT
+ 
+            except Exception as e:
+                # If the LLM hallucinates or JSON parsing fails
+                reward = 0.01  # Strictly above 0.0
+                error = str(e).replace("\n", " ")
+                action_str = "invalid_format"
+                result.done = True  # End episode on fatal format error
+ 
+            rewards.append(reward)
+            steps_taken = step
+ 
+            log_step(step=step, action=action_str, reward=reward, done=result.done, error=error)
+ 
+            if result.done:
+                break
+ 
+        # Calculate final normalized score — strictly between 0 and 1
+        if steps_taken > 0:
+            raw_score = sum(rewards) / steps_taken
         else:
-            # Invalid wallets: might be missing '0x', or wrong length
-            return random.choice([f"0x{chars[:30]}", f"1x{chars}", chars])
-
-    def _generate_requests(self, batch_size: int = 3) -> List[CertificateRequest]:
-        """Generates a mix of valid and invalid requests for the agent to process."""
-        requests = []
-        for i in range(batch_size):
-            is_valid = random.choice([True, False])
-            score = random.uniform(70.0, 99.0) if is_valid else random.uniform(40.0, 69.9)
-            wallet = self._generate_mock_wallet(is_valid)
-            
-            requests.append(CertificateRequest(
-                request_id=f"REQ-{random.randint(1000, 9999)}",
-                student_name=f"Student_{i}",
-                course_name="Intro to Web3",
-                final_score=round(score, 2),
-                wallet_address=wallet
-            ))
-        return requests
-
-    def state(self) -> BlockchainObservation:
-        """Returns the current state without advancing the environment."""
-        return BlockchainObservation(
-            pending_requests=self.pending_requests,
-            gas_balance=round(self.gas_balance, 2),
-            current_step=self.current_step,
-            last_error=self.last_error
-        )
-
-    def reset(self) -> EnvResult:
-        """Resets the environment for a new episode."""
-        self.current_step = 0
-        self.gas_balance = 2.0  # Enough for roughly 20 valid mints
-        self.last_error = None
-        self.pending_requests = self._generate_requests(batch_size=3)
-        
-        return EnvResult(observation=self.state())
-
-    def step(self, action: BlockchainAction) -> EnvResult:
-        """Processes the agent's action, updates state, and calculates reward."""
-        self.current_step += 1
-        self.last_error = None
-        step_reward = 0.0
-        correct_decisions = 0
-        total_requests = len(self.pending_requests)
-
-        # Create a dictionary of actions for easy lookup
-        decision_map = {dec.request_id: dec.decision for dec in action.decisions}
-
-        for req in self.pending_requests:
-            # Ground truth validation logic
-            is_valid_score = req.final_score >= 70.0
-            is_valid_wallet = req.wallet_address.startswith("0x") and len(req.wallet_address) == 42
-            should_mint = is_valid_score and is_valid_wallet
-
-            agent_decision = decision_map.get(req.request_id)
-
-            if agent_decision == "mint":
-                if should_mint and self.gas_balance >= self.gas_cost_per_mint:
-                    self.gas_balance -= self.gas_cost_per_mint
-                    correct_decisions += 1
-                else:
-                    # Penalize for minting invalid certs or trying to mint without gas
-                    step_reward -= 0.5 
-            elif agent_decision == "reject":
-                if not should_mint:
-                    correct_decisions += 1
-                else:
-                    # Penalize for rejecting a valid student
-                    step_reward -= 0.5
-            else:
-                self.last_error = f"Missing or invalid decision for {req.request_id}"
-
-        # Calculate partial reward for this step (max 1.0 per step for perfect batch)
-        if total_requests > 0:
-            step_reward += (correct_decisions / total_requests)
-
-        # Clamp reward to ensure it stays somewhat bounded
-        step_reward = max(0.0, min(1.0, step_reward))
-
-        # Check if episode is done
-        done = self.current_step >= self.max_steps or self.gas_balance <= 0
-
-        # Generate next batch if not done
-        if not done:
-            self.pending_requests = self._generate_requests(batch_size=3)
-        else:
-            self.pending_requests = []
-
-        return EnvResult(
-            observation=self.state(),
-            reward=step_reward,
-            done=done,
-            info={"correct_decisions": correct_decisions, "total_batch": total_requests}
-        )
+            raw_score = 0.0
+ 
+        # Clamp STRICTLY between 0 and 1 — never exactly 0.0 or 1.0
+        score = max(0.01, min(0.99, raw_score))
+        success = score >= 0.6
+ 
+    finally:
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+ 
+if __name__ == "__main__":
+    main()
