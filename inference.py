@@ -9,10 +9,11 @@ from env import BlockchainEnv
 
 # --- Mandatory Hackathon Variables ---
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini") # Swap to your active model
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini") 
 HF_TOKEN = os.getenv("HF_TOKEN")
 API_KEY = HF_TOKEN or os.getenv("OPENAI_API_KEY")
-TASK_NAME = os.getenv("MY_ENV_TASK", "hard_gas_management")
+# FIX 1: Match the exact ID from your openenv.yaml
+TASK_NAME = os.getenv("MY_ENV_TASK", "easy_minting") 
 BENCHMARK = "blockchain_certificate_admin"
 MAX_STEPS = 5
 
@@ -58,7 +59,6 @@ def main():
     
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
     
-    # Initialize Environment
     result = env.reset()
     
     try:
@@ -70,33 +70,33 @@ def main():
             user_prompt = f"Pending Requests: {obs.pending_requests}\nGas Balance: {obs.gas_balance}\nStep: {step}"
             
             try:
-                # Call LLM
                 completion = client.chat.completions.create(
                     model=MODEL_NAME,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_prompt},
                     ],
-                    temperature=0.0, # Deterministic logic preferred here
+                    temperature=0.0, 
                 )
                 raw_response = (completion.choices[0].message.content or "").strip()
                 
-                # Parse JSON and execute action
                 action_dict = json.loads(raw_response)
                 action = BlockchainAction(**action_dict)
                 result = env.step(action)
                 
                 reward = result.reward
                 error = None
-                action_str = json.dumps(action_dict).replace(" ", "") # Compress for STDOUT
+                action_str = json.dumps(action_dict).replace(" ", "") 
                 
             except Exception as e:
-                # If the LLM hallucinates or JSON parsing fails
-                reward = -1.0 
-                error = str(e).replace("\n", " ")
-                action_str = "invalid_format"
-                result.done = True # End episode on fatal format error
+                # FIX 2: Never output negative numbers or raw text! Bot parses this!
+                reward = 0.01 
+                error = "format_error" # No spaces allowed in error logs
+                action_str = "{}" # Must be valid JSON brackets
+                result.done = True 
                 
+            # FIX 3: Strictly clamp reward before printing to the terminal
+            reward = max(0.01, min(0.99, reward))
             rewards.append(reward)
             steps_taken = step
             
@@ -105,9 +105,8 @@ def main():
             if result.done:
                 break
                 
-        # Calculate final normalized score
-        score = sum(rewards) / steps_taken if steps_taken > 0 else 0.0
-        score = max(0.0, min(1.0, score))
+        score = sum(rewards) / steps_taken if steps_taken > 0 else 0.01
+        score = max(0.01, min(0.99, score))
         success = score >= 0.6
         
     finally:
